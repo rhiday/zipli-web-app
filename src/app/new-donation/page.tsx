@@ -80,10 +80,29 @@ export default function NewDonation() {
         
         recognition.onstart = () => {
           setIsListening(true);
+          
+          // Set a timeout to stop recording after 1 minute (60000 ms)
+          const timeoutId = setTimeout(() => {
+            if (recognition) {
+              recognition.stop();
+              setIsListening(false);
+              // Generate summary after auto-stopping
+              if (description.trim()) {
+                generateSummaryWithGPT(description);
+              }
+            }
+          }, 60000);
+          
+          // Store the timeout ID on the recognition object to clear it later if needed
+          (recognition as any).timeoutId = timeoutId;
         };
 
         recognition.onend = () => {
           setIsListening(false);
+          // Clear the timeout if it exists
+          if ((recognition as any).timeoutId) {
+            clearTimeout((recognition as any).timeoutId);
+          }
         };
 
         recognition.onresult = (event: SpeechRecognitionEvent) => {
@@ -306,6 +325,11 @@ export default function NewDonation() {
                     : 'bg-gray-200 text-gray-600 border border-gray-300 hover:bg-gray-300' // Ready to preview
               }`}
               onClick={() => {
+                // If we're listening, stop the microphone first
+                if (isListening && speechRecognition) {
+                  speechRecognition.stop();
+                }
+                
                 if (description.trim() && !showSummary) {
                   generateSummaryWithGPT(description);
                 } else if (showSummary) {

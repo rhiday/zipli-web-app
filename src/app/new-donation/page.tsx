@@ -2,8 +2,11 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { VoiceTextarea } from "@/components/common/voice-textarea";
+import { ProgressStepper } from "@/components/common/progress-stepper";
 
 // Type declarations for the Web Speech API
 interface SpeechRecognitionEvent extends Event {
@@ -241,167 +244,59 @@ export default function NewDonation() {
       </header>
 
       {/* Progress stepper */}
-      <div className="flex gap-2 mb-12">
-        <div className="h-2 rounded-full bg-green-800 flex-1"></div>
-        <div className="h-2 rounded-full bg-red-100 flex-1"></div>
-        <div className="h-2 rounded-full bg-red-100 flex-1"></div>
-        <div className="h-2 rounded-full bg-red-100 flex-1"></div>
-      </div>
+      <ProgressStepper 
+        steps={4} 
+        currentStep={1} 
+        className="mb-12" 
+      />
 
       {/* Form section */}
       <main className="flex-1 flex flex-col">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-3xl font-medium text-gray-900">Donation description</h2>
+          <h2 className="text-3xl font-medium">Donation description</h2>
           
           {/* Language toggle */}
-          <button 
+          <Button 
             onClick={toggleLanguage}
+            variant="outline"
             className="px-3 py-1.5 bg-gray-100 rounded-full text-sm font-medium text-gray-800 hover:bg-gray-200 transition-colors border border-gray-200"
           >
             {language === 'fi-FI' ? '🇫🇮 Suomi' : '🇺🇸 English'}
-          </button>
+          </Button>
         </div>
         
-        {/* Text input area with voice button */}
-        <div className="relative mb-auto">
-          <div className="bg-red-50 rounded-3xl p-6 min-h-64 flex items-start">
-            <textarea 
-              placeholder={language === 'fi-FI' ? "Ruoan määrä ja tyyppi" : "Amount and type of food"}
-              className="bg-transparent w-full h-full resize-none text-gray-700 text-xl outline-none placeholder:text-gray-500"
-              rows={8}
-              value={description}
-              onChange={(e) => {
-                setDescription(e.target.value);
-                setShowSummary(false);
-              }}
-            />
-          </div>
-          
-          {/* Summary of key points */}
-          {showSummary && (
-            <div className="absolute top-4 right-4 left-4 bg-white rounded-xl shadow-md p-4 z-10 border border-green-800/20">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="font-medium text-gray-900">
-                  {language === 'fi-FI' ? 'Yhteenveto (GPT)' : 'Summary (GPT)'}
-                </h3>
-                <button 
-                  onClick={() => setShowSummary(false)}
-                  className="text-gray-600 hover:text-gray-900"
-                >
-                  ×
-                </button>
-              </div>
-              <ul className="list-disc pl-5 space-y-1">
-                {summaryPoints.map((point, index) => (
-                  <li key={index} className={point ? "text-gray-800" : "text-gray-400"}>
-                    {point || (language === 'fi-FI' ? 'Ei tarpeeksi tietoa' : 'Not enough information')}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-3 flex justify-end">
-                <button 
-                  onClick={() => setShowSummary(false)}
-                  className="text-green-800 text-sm font-medium hover:text-green-900"
-                >
-                  {language === 'fi-FI' ? 'OK' : 'OK'}
-                </button>
-              </div>
-            </div>
-          )}
-          
-          {/* Summarization in progress indicator */}
-          {isSummarizing && (
-            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white/90 rounded-xl p-4 z-10 flex flex-col items-center shadow-md border border-green-800/20">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-800 mb-2"></div>
-              <p className="text-sm font-medium text-green-800">
-                {language === 'fi-FI' ? 'Tiivistetään...' : 'Summarizing...'}
-              </p>
-            </div>
-          )}
-          
-          {/* Microphone button with language indicator */}
-          <div className="absolute bottom-4 right-4 flex gap-3">
-            {/* Preview summary button */}
-            <button 
-              className={`rounded-full px-4 py-3 transition-colors shadow-sm ${
-                !description.trim()
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300/50' // Disabled
-                  : showSummary
-                    ? 'bg-green-50 text-green-700 border border-green-300 hover:bg-green-100' // Summary showing
-                    : 'bg-gray-200 text-gray-600 border border-gray-300 hover:bg-gray-300' // Ready to preview
-              }`}
-              onClick={() => {
-                // If currently listening, stop the microphone first
-                if (isListening && speechRecognition) {
-                  speechRecognition.stop();
-                }
-                
-                if (description.trim() && !showSummary) {
-                  generateSummaryWithGPT(description);
-                } else if (showSummary) {
-                  setShowSummary(false);
-                }
-              }}
-              disabled={!description.trim()}
-            >
-              <div className="flex items-center text-sm font-medium">
-                {showSummary ? (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 mr-1">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    {language === 'fi-FI' ? 'Sulje' : 'Close'}
-                  </>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 mr-1">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    {language === 'fi-FI' ? 'Esikatselu' : 'Preview'}
-                  </>
-                )}
-              </div>
-            </button>
-            
-            {/* Voice input button */}
-            <button 
-              className={`rounded-full p-4 transition-colors shadow-md ${
-                isListening ? 'bg-red-600 animate-pulse' : 'bg-green-800 hover:bg-green-900'
-              }`}
-              onClick={toggleListening}
-            >
-              <div className="text-white w-8 h-8 flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-6 h-6">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-                </svg>
-              </div>
-            </button>
-          </div>
-          
-          {/* Speech status message */}
-          {isListening && (
-            <div className="absolute bottom-20 right-4 bg-green-100 text-green-800 py-1.5 px-4 rounded-full text-sm font-medium animate-pulse border border-green-300 shadow-sm">
-              {language === 'fi-FI' ? 'Kuuntelee...' : 'Listening...'}
-            </div>
-          )}
-        </div>
+        {/* Voice textarea component */}
+        <VoiceTextarea
+          value={description}
+          onChange={setDescription}
+          placeholder={language === 'fi-FI' ? "Ruoan määrä ja tyyppi" : "Amount and type of food"}
+          isListening={isListening}
+          onToggleListening={toggleListening}
+          onSummarize={() => setShowSummary(!showSummary)}
+          summaryPoints={summaryPoints}
+          showSummary={showSummary}
+          isSummarizing={isSummarizing}
+          language={language}
+          className="mb-auto"
+        />
         
         {/* Bottom buttons */}
         <div className="space-y-4 mt-6">
-          <button 
+          <Button 
             className={`w-full ${description.trim() ? 'bg-green-800' : 'bg-gray-400'} text-white text-xl font-medium py-4 rounded-full transition-colors ${description.trim() ? 'hover:bg-green-900' : ''}`}
             onClick={handleContinue}
             disabled={!description.trim()}
           >
             {language === 'fi-FI' ? 'Jatka' : 'Continue'}
-          </button>
+          </Button>
           
-          <button 
+          <Button 
+            variant="outline"
             className="w-full border-2 border-green-800 text-green-800 text-xl font-medium py-4 rounded-full hover:bg-green-50 transition-colors"
             onClick={() => router.push("/new-donation/step2")}
           >
             {language === 'fi-FI' ? 'Ohita' : 'Skip'}
-          </button>
+          </Button>
         </div>
       </main>
     </div>

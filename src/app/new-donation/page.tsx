@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 // Type declarations for the Web Speech API
@@ -60,14 +60,6 @@ export default function NewDonation() {
   const [summaryPoints, setSummaryPoints] = useState<string[]>([]);
   const [showSummary, setShowSummary] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
-  const [audioLevel, setAudioLevel] = useState(0); // State for audio level visualization
-  const [timeLeft, setTimeLeft] = useState(60); // Time left in seconds
-  
-  // References for audio processing
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const microphoneStreamRef = useRef<MediaStream | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
 
   // Initialize speech recognition with the selected language
   const initSpeechRecognition = (lang: string) => {
@@ -79,7 +71,6 @@ export default function NewDonation() {
         if (speechRecognition) {
           speechRecognition.stop();
           setIsListening(false);
-          stopAudioVisualization();
         }
 
         const recognition = new SpeechRecognitionAPI();
@@ -89,51 +80,10 @@ export default function NewDonation() {
         
         recognition.onstart = () => {
           setIsListening(true);
-          setTimeLeft(60); // Reset timer to 60 seconds
-          
-          // Set a timeout to stop recording after 1 minute (60000 ms)
-          const timeoutId = setTimeout(() => {
-            if (recognition) {
-              recognition.stop();
-              setIsListening(false);
-              // Generate summary after auto-stopping
-              if (description.trim()) {
-                generateSummaryWithGPT(description);
-              }
-            }
-          }, 60000);
-          
-          // Start countdown timer
-          const countdownInterval = setInterval(() => {
-            setTimeLeft(prev => {
-              if (prev <= 1) {
-                clearInterval(countdownInterval);
-                return 0;
-              }
-              return prev - 1;
-            });
-          }, 1000);
-          
-          // Store the IDs on the recognition object to clear them later
-          (recognition as any).timeoutId = timeoutId;
-          (recognition as any).countdownInterval = countdownInterval;
-          
-          // Start audio visualization
-          startAudioVisualization();
         };
 
         recognition.onend = () => {
           setIsListening(false);
-          // Clear the timeout if it exists
-          if ((recognition as any).timeoutId) {
-            clearTimeout((recognition as any).timeoutId);
-          }
-          // Clear the interval if it exists
-          if ((recognition as any).countdownInterval) {
-            clearInterval((recognition as any).countdownInterval);
-          }
-          // Stop audio visualization
-          stopAudioVisualization();
         };
 
         recognition.onresult = (event: SpeechRecognitionEvent) => {
@@ -155,18 +105,6 @@ export default function NewDonation() {
     }
   };
 
-  // Clean up on component unmount
-  useEffect(() => {
-    return () => {
-      stopAudioVisualization();
-      
-      // Stop any active speech recognition when component unmounts
-      if (speechRecognition) {
-        speechRecognition.stop();
-      }
-    };
-  }, []);
-  
   // Initialize speech recognition on component mount
   useEffect(() => {
     initSpeechRecognition(language);
@@ -175,10 +113,34 @@ export default function NewDonation() {
     return () => {
       if (speechRecognition) {
         speechRecognition.stop();
-        stopAudioVisualization();
       }
     };
-  }, [language, speechRecognition]); // Re-initialize when language changes
+  }, [language]); // Re-initialize when language changes
+
+  // Add a timer to limit recording to 1 minute
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+    
+    if (isListening) {
+      // Set a timer to stop recording after 1 minute
+      timer = setTimeout(() => {
+        if (speechRecognition && isListening) {
+          speechRecognition.stop();
+          // After stopping, generate the summary if there's text
+          if (description.trim()) {
+            generateSummaryWithGPT(description);
+          }
+        }
+      }, 60000); // 60 seconds = 1 minute
+    }
+    
+    // Clear the timer if listening stops before the time limit
+    return () => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    };
+  }, [isListening, speechRecognition, description]);
 
   const toggleListening = () => {
     if (!speechRecognition) {
@@ -186,32 +148,15 @@ export default function NewDonation() {
       return;
     }
 
-    try {
-      if (isListening) {
-        speechRecognition.stop();
-        // After stopping, generate the summary if there's text
-        if (description.trim()) {
-          generateSummaryWithGPT(description);
-        }
-      } else {
-        // Check if the browser supports getUserMedia
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          alert(language === 'fi-FI'
-            ? 'Selaimesi ei tue mikrofonin käyttöä.'
-            : 'Your browser does not support microphone access.');
-          return;
-        }
-        
-        // Start speech recognition
-        speechRecognition.start();
-        setShowSummary(false);
+    if (isListening) {
+      speechRecognition.stop();
+      // After stopping, generate the summary if there's text
+      if (description.trim()) {
+        generateSummaryWithGPT(description);
       }
-    } catch (error) {
-      console.error('Error toggling speech recognition:', error);
-      alert(language === 'fi-FI'
-        ? 'Virhe puheentunnistuksessa. Yritä uudelleen.'
-        : 'Error with speech recognition. Please try again.');
-      setIsListening(false);
+    } else {
+      speechRecognition.start();
+      setShowSummary(false);
     }
   };
 
@@ -283,91 +228,6 @@ export default function NewDonation() {
     // Update state with the summary points
     setSummaryPoints(points);
     setShowSummary(true);
-  };
-
-  // Start audio visualization
-  const startAudioVisualization = async () => {
-    try {
-      // Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        .catch(err => {
-          console.error('Microphone permission denied:', err);
-          alert(language === 'fi-FI' 
-            ? 'Mikrofonin käyttöoikeus evätty. Salli mikrofonin käyttö selaimesi asetuksista.'
-            : 'Microphone permission denied. Please allow microphone access in your browser settings.');
-          throw err;
-        });
-        
-      microphoneStreamRef.current = stream;
-      
-      // Create audio context and analyzer
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioContextRef.current = audioContext;
-      
-      // Create analyzer node
-      const analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256;
-      analyserRef.current = analyser;
-      
-      // Connect microphone to analyzer
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
-      
-      // Start visualization loop
-      updateAudioVisualization();
-    } catch (error) {
-      console.error('Error accessing microphone', error);
-      // Reset the listening state if there was an error
-      setIsListening(false);
-      if (speechRecognition) {
-        speechRecognition.stop();
-      }
-    }
-  };
-  
-  // Update audio visualization
-  const updateAudioVisualization = () => {
-    if (!analyserRef.current) return;
-    
-    const analyser = analyserRef.current;
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    
-    // Get frequency data
-    analyser.getByteFrequencyData(dataArray);
-    
-    // Calculate average volume level (0-100)
-    const average = dataArray.reduce((acc, val) => acc + val, 0) / dataArray.length;
-    const normalizedLevel = Math.min(100, Math.max(0, average * 1.5)); // Scale up a bit for better visibility
-    
-    // Update state with new audio level
-    setAudioLevel(normalizedLevel);
-    
-    // Continue the loop
-    animationFrameRef.current = requestAnimationFrame(updateAudioVisualization);
-  };
-  
-  // Stop audio visualization
-  const stopAudioVisualization = () => {
-    // Cancel animation frame
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
-    }
-    
-    // Close audio context
-    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    
-    // Stop microphone stream
-    if (microphoneStreamRef.current) {
-      microphoneStreamRef.current.getTracks().forEach(track => track.stop());
-      microphoneStreamRef.current = null;
-    }
-    
-    // Reset audio level
-    setAudioLevel(0);
   };
 
   return (
@@ -471,7 +331,7 @@ export default function NewDonation() {
                     : 'bg-gray-200 text-gray-600 border border-gray-300 hover:bg-gray-300' // Ready to preview
               }`}
               onClick={() => {
-                // If we're listening, stop the microphone first
+                // If currently listening, stop the microphone first
                 if (isListening && speechRecognition) {
                   speechRecognition.stop();
                 }
@@ -518,22 +378,10 @@ export default function NewDonation() {
             </button>
           </div>
           
-          {/* Speech status message with visualization and timer */}
+          {/* Speech status message */}
           {isListening && (
-            <div className="absolute bottom-20 right-4 bg-green-100 text-green-800 py-1.5 px-4 rounded-full text-sm font-medium border border-green-300 shadow-sm flex items-center space-x-2">
-              {/* Voice level indicator */}
-              <div className="relative h-4 w-24 bg-green-200 rounded-full overflow-hidden">
-                <div 
-                  className="absolute top-0 left-0 h-full bg-green-600 transition-all duration-100"
-                  style={{ width: `${audioLevel}%` }}
-                ></div>
-              </div>
-              
-              {/* Timer */}
-              <span className="whitespace-nowrap">{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}</span>
-              
-              {/* Status message */}
-              <span>{language === 'fi-FI' ? 'Kuuntelee...' : 'Listening...'}</span>
+            <div className="absolute bottom-20 right-4 bg-green-100 text-green-800 py-1.5 px-4 rounded-full text-sm font-medium animate-pulse border border-green-300 shadow-sm">
+              {language === 'fi-FI' ? 'Kuuntelee...' : 'Listening...'}
             </div>
           )}
         </div>

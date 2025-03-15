@@ -186,15 +186,32 @@ export default function NewDonation() {
       return;
     }
 
-    if (isListening) {
-      speechRecognition.stop();
-      // After stopping, generate the summary if there's text
-      if (description.trim()) {
-        generateSummaryWithGPT(description);
+    try {
+      if (isListening) {
+        speechRecognition.stop();
+        // After stopping, generate the summary if there's text
+        if (description.trim()) {
+          generateSummaryWithGPT(description);
+        }
+      } else {
+        // Check if the browser supports getUserMedia
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          alert(language === 'fi-FI'
+            ? 'Selaimesi ei tue mikrofonin käyttöä.'
+            : 'Your browser does not support microphone access.');
+          return;
+        }
+        
+        // Start speech recognition
+        speechRecognition.start();
+        setShowSummary(false);
       }
-    } else {
-      speechRecognition.start();
-      setShowSummary(false);
+    } catch (error) {
+      console.error('Error toggling speech recognition:', error);
+      alert(language === 'fi-FI'
+        ? 'Virhe puheentunnistuksessa. Yritä uudelleen.'
+        : 'Error with speech recognition. Please try again.');
+      setIsListening(false);
     }
   };
 
@@ -272,7 +289,15 @@ export default function NewDonation() {
   const startAudioVisualization = async () => {
     try {
       // Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        .catch(err => {
+          console.error('Microphone permission denied:', err);
+          alert(language === 'fi-FI' 
+            ? 'Mikrofonin käyttöoikeus evätty. Salli mikrofonin käyttö selaimesi asetuksista.'
+            : 'Microphone permission denied. Please allow microphone access in your browser settings.');
+          throw err;
+        });
+        
       microphoneStreamRef.current = stream;
       
       // Create audio context and analyzer
@@ -292,6 +317,11 @@ export default function NewDonation() {
       updateAudioVisualization();
     } catch (error) {
       console.error('Error accessing microphone', error);
+      // Reset the listening state if there was an error
+      setIsListening(false);
+      if (speechRecognition) {
+        speechRecognition.stop();
+      }
     }
   };
   

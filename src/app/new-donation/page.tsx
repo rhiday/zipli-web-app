@@ -452,10 +452,10 @@ export default function NewDonation() {
                 {language === 'fi-FI' 
                   ? useAlternativeAPI 
                     ? "Vaihtoehtoinen mikrofoni käytössä. Paina nappia aloittaaksesi." 
-                    : "Mobiililaitteilla: Varmista, että mikrofonilupa on sallittu ja pidä nappia pohjassa puhuessasi. Puhu lyhyitä fraaseja kerrallaan."
+                    : "Mobiililaitteilla: Varmista, että mikrofonilupa on sallittu. Napauta mikrofoni-painiketta aloittaaksesi ja lopettaaksesi äänityksen."
                   : useAlternativeAPI
                     ? "Alternative microphone active. Tap button to start." 
-                    : "On mobile devices: Ensure microphone permission is allowed. Press and hold the button while speaking short phrases at a time."}
+                    : "On mobile devices: Ensure microphone permission is allowed. Tap the microphone button to start and stop recording."}
               </p>
             </div>
             
@@ -508,50 +508,46 @@ export default function NewDonation() {
                 className={`rounded-full p-4 transition-colors shadow-md ${
                   (useAlternativeAPI ? altListening : isListening) ? 'bg-red-600 animate-pulse' : 'bg-green-800 hover:bg-green-900'
                 }`}
-                onTouchStart={(e) => {
-                  if (useAlternativeAPI) return; // Skip for alternative API
+                onClick={() => {
+                  // Use a single click for all devices
+                  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
                   
-                  e.preventDefault();
-                  if (!isListening) {
-                    try {
-                      // For mobile, use a fresh instance each time
-                      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                      if (isMobile) {
+                  if (useAlternativeAPI) {
+                    // Handle alternative API
+                    toggleListening();
+                  } else if (isMobile) {
+                    // For mobile, create a fresh instance each time if needed
+                    if (!isListening) {
+                      try {
                         const recognition = initSpeechRecognition(language);
                         if (recognition) {
                           recognition.start();
                           setShowSummary(false);
                         }
-                      } else {
-                        toggleListening();
+                      } catch (error) {
+                        console.error("Voice recognition start error:", error);
+                        const debugEl = document.getElementById('debug-log');
+                        if (debugEl) debugEl.textContent = "Error: " + String(error);
                       }
-                    } catch (error) {
-                      console.error("Touch start error:", error);
-                      const debugEl = document.getElementById('debug-log');
-                      if (debugEl) debugEl.textContent = "Error: " + String(error);
+                    } else {
+                      // Stop listening if already active
+                      if (speechRecognition) {
+                        try {
+                          speechRecognition.stop();
+                          // Generate summary if there's text
+                          if (description.trim()) {
+                            generateSummaryWithGPT(description);
+                          }
+                        } catch (error) {
+                          console.error("Voice recognition stop error:", error);
+                        }
+                      }
                     }
+                  } else {
+                    // For desktop
+                    toggleListening();
                   }
                 }}
-                onTouchEnd={(e) => {
-                  if (useAlternativeAPI) return; // Skip for alternative API
-                  
-                  e.preventDefault();
-                  if (isListening) {
-                    try {
-                      // For mobile - stop on touch end
-                      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                      if (isMobile && speechRecognition) {
-                        speechRecognition.stop();
-                        // Don't generate summary on every phrase
-                      }
-                    } catch (error) {
-                      console.error("Touch end error:", error);
-                      const debugEl = document.getElementById('debug-log');
-                      if (debugEl) debugEl.textContent = "Error: " + String(error);
-                    }
-                  }
-                }}
-                onClick={toggleListening}
               >
                 <div className="text-white w-8 h-8 flex items-center justify-center">
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-6 h-6">

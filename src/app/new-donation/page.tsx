@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 
 // Type declarations for the Web Speech API
 interface SpeechRecognitionEvent extends Event {
@@ -60,6 +61,22 @@ export default function NewDonation() {
   const [summaryPoints, setSummaryPoints] = useState<string[]>([]);
   const [showSummary, setShowSummary] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
+  const [useAlternativeAPI, setUseAlternativeAPI] = useState(false); // Toggle for the alternative API
+
+  // For react-speech-recognition
+  const {
+    transcript,
+    listening,
+    resetTranscript,
+    browserSupportsSpeechRecognition
+  } = useSpeechRecognition();
+
+  // Update description when transcript changes from react-speech-recognition
+  useEffect(() => {
+    if (useAlternativeAPI && transcript) {
+      setDescription(prev => prev + " " + transcript);
+    }
+  }, [transcript, useAlternativeAPI]);
 
   // Initialize speech recognition with the selected language
   const initSpeechRecognition = (lang: string) => {
@@ -186,6 +203,25 @@ export default function NewDonation() {
   }, [isListening, speechRecognition, description]);
 
   const toggleListening = () => {
+    // If using alternative API
+    if (useAlternativeAPI) {
+      if (listening) {
+        SpeechRecognition.stopListening();
+        resetTranscript();
+        // Generate summary if there's text
+        if (description.trim()) {
+          generateSummaryWithGPT(description);
+        }
+      } else {
+        SpeechRecognition.startListening({ 
+          continuous: true,
+          language: language 
+        });
+        setShowSummary(false);
+      }
+      return;
+    }
+
     if (!speechRecognition) {
       // Try to reinitialize if not available
       const recognition = initSpeechRecognition(language);
@@ -348,13 +384,41 @@ export default function NewDonation() {
             />
           </div>
           
+          {/* Alternative API toggle */}
+          <div className="mt-2 text-xs text-right">
+            <label className="inline-flex items-center cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={useAlternativeAPI} 
+                onChange={() => setUseAlternativeAPI(!useAlternativeAPI)}
+                className="sr-only peer"
+              />
+              <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
+              <span className="ms-1 text-gray-500">
+                {language === 'fi-FI' ? "Käytä vaihtoehtoista mikrofonia" : "Use alternative microphone"}
+              </span>
+            </label>
+          </div>
+          
           {/* Mobile-specific help text */}
           <div className="mt-2 text-sm text-gray-500 px-2 md:hidden">
             <p>
               {language === 'fi-FI' 
-                ? "Mobiililaitteilla: Varmista, että mikrofonilupa on sallittu ja pidä nappia pohjassa puhuessasi. Puhu lyhyitä fraaseja kerrallaan." 
-                : "On mobile devices: Ensure microphone permission is allowed. Press and hold the button while speaking short phrases at a time."}
+                ? useAlternativeAPI 
+                  ? "Vaihtoehtoinen mikrofoni käytössä. Paina nappia aloittaaksesi." 
+                  : "Mobiililaitteilla: Varmista, että mikrofonilupa on sallittu ja pidä nappia pohjassa puhuessasi. Puhu lyhyitä fraaseja kerrallaan."
+                : useAlternativeAPI
+                  ? "Alternative microphone active. Tap button to start." 
+                  : "On mobile devices: Ensure microphone permission is allowed. Press and hold the button while speaking short phrases at a time."}
             </p>
+          </div>
+          
+          {/* Debug log for mobile testing */}
+          <div className="fixed bottom-0 left-0 right-0 bg-white p-2 text-xs overflow-auto max-h-24 opacity-70 z-40">
+            <pre id="debug-log">{useAlternativeAPI 
+              ? `Alternative API: ${listening ? 'Listening' : 'Not listening'} | Support: ${browserSupportsSpeechRecognition ? 'Yes' : 'No'}`
+              : 'Original API: ' + (isListening ? 'Listening' : 'Not listening')
+            }</pre>
           </div>
           
           {/* Summary of key points */}
@@ -446,9 +510,11 @@ export default function NewDonation() {
             {/* Voice input button */}
             <button 
               className={`rounded-full p-4 transition-colors shadow-md ${
-                isListening ? 'bg-red-600 animate-pulse' : 'bg-green-800 hover:bg-green-900'
+                (useAlternativeAPI ? listening : isListening) ? 'bg-red-600 animate-pulse' : 'bg-green-800 hover:bg-green-900'
               }`}
               onTouchStart={(e) => {
+                if (useAlternativeAPI) return; // Skip for alternative API
+                
                 e.preventDefault();
                 if (!isListening) {
                   try {
@@ -465,10 +531,13 @@ export default function NewDonation() {
                     }
                   } catch (error) {
                     console.error("Touch start error:", error);
+                    document.getElementById('debug-log')!.textContent = "Error: " + String(error);
                   }
                 }
               }}
               onTouchEnd={(e) => {
+                if (useAlternativeAPI) return; // Skip for alternative API
+                
                 e.preventDefault();
                 if (isListening) {
                   try {
@@ -480,10 +549,11 @@ export default function NewDonation() {
                     }
                   } catch (error) {
                     console.error("Touch end error:", error);
+                    document.getElementById('debug-log')!.textContent = "Error: " + String(error);
                   }
                 }
               }}
-              onClick={toggleListening}
+              onClick={() => toggleListening()}
             >
               <div className="text-white w-8 h-8 flex items-center justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-6 h-6">
@@ -494,11 +564,21 @@ export default function NewDonation() {
           </div>
           
           {/* Speech status message */}
-          {isListening && (
-            <div className="absolute bottom-20 right-4 bg-green-100 text-green-800 py-1.5 px-4 rounded-full text-sm font-medium animate-pulse border border-green-300 shadow-sm">
-              {language === 'fi-FI' ? 'Kuuntelee...' : 'Listening...'}
-            </div>
-          )}
+          <div className="absolute bottom-24 right-0 left-0 flex justify-center">
+            {useAlternativeAPI ? (
+              listening && (
+                <span className="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full animate-pulse">
+                  {language === 'fi-FI' ? 'Kuuntelee...' : 'Listening...'}
+                </span>
+              )
+            ) : (
+              isListening && (
+                <span className="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full animate-pulse">
+                  {language === 'fi-FI' ? 'Kuuntelee...' : 'Listening...'}
+                </span>
+              )
+            )}
+          </div>
         </div>
         
         {/* Bottom buttons */}

@@ -74,9 +74,19 @@ export default function NewDonation() {
         }
 
         const recognition = new SpeechRecognitionAPI();
-        recognition.continuous = true;
+        // For mobile, non-continuous mode works better
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        recognition.continuous = !isMobile;
         recognition.interimResults = true;
         recognition.lang = lang;
+        
+        // Log device info for debugging
+        console.log("Device info:", {
+          userAgent: navigator.userAgent,
+          isMobile: isMobile,
+          language: lang,
+          continuous: recognition.continuous
+        });
         
         recognition.onstart = () => {
           setIsListening(true);
@@ -90,12 +100,18 @@ export default function NewDonation() {
 
         recognition.onresult = (event: SpeechRecognitionEvent) => {
           console.log("Got speech result", event.results.length);
-          const transcript = Array.from(event.results)
-            .map(result => result[0])
-            .map(result => result.transcript)
-            .join('');
           
-          setDescription(transcript);
+          try {
+            const transcript = Array.from(event.results)
+              .map(result => result[0])
+              .map(result => result.transcript)
+              .join(' ');
+            
+            console.log("Transcript:", transcript);
+            setDescription(prev => isMobile ? prev + " " + transcript : transcript);
+          } catch (error) {
+            console.error("Error processing transcript:", error);
+          }
         };
 
         recognition.onerror = (event: SpeechRecognitionEvent) => {
@@ -336,8 +352,8 @@ export default function NewDonation() {
           <div className="mt-2 text-sm text-gray-500 px-2 md:hidden">
             <p>
               {language === 'fi-FI' 
-                ? "Mobiililaitteilla: Varmista, että mikrofonilupa on sallittu ja pidä nappia pohjassa puhuessasi." 
-                : "On mobile devices: Ensure microphone permission is allowed and hold the button while speaking."}
+                ? "Mobiililaitteilla: Varmista, että mikrofonilupa on sallittu ja pidä nappia pohjassa puhuessasi. Puhu lyhyitä fraaseja kerrallaan." 
+                : "On mobile devices: Ensure microphone permission is allowed. Press and hold the button while speaking short phrases at a time."}
             </p>
           </div>
           
@@ -432,6 +448,41 @@ export default function NewDonation() {
               className={`rounded-full p-4 transition-colors shadow-md ${
                 isListening ? 'bg-red-600 animate-pulse' : 'bg-green-800 hover:bg-green-900'
               }`}
+              onTouchStart={(e) => {
+                e.preventDefault();
+                if (!isListening) {
+                  try {
+                    // For mobile, use a fresh instance each time
+                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                    if (isMobile) {
+                      const recognition = initSpeechRecognition(language);
+                      if (recognition) {
+                        recognition.start();
+                        setShowSummary(false);
+                      }
+                    } else {
+                      toggleListening();
+                    }
+                  } catch (error) {
+                    console.error("Touch start error:", error);
+                  }
+                }
+              }}
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                if (isListening) {
+                  try {
+                    // For mobile - stop on touch end
+                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                    if (isMobile && speechRecognition) {
+                      speechRecognition.stop();
+                      // Don't generate summary on every phrase
+                    }
+                  } catch (error) {
+                    console.error("Touch end error:", error);
+                  }
+                }
+              }}
               onClick={toggleListening}
             >
               <div className="text-white w-8 h-8 flex items-center justify-center">

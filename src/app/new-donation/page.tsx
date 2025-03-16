@@ -26,38 +26,73 @@ export default function NewDonation() {
       setRecordingError(null);
       audioChunksRef.current = [];
       
-      // Get audio permission and start recording
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      // Get audio permission and start recording with specific constraints
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        } 
+      });
       
+      // Use a supported audio format with higher quality
+      const options = { 
+        mimeType: 'audio/webm;codecs=opus',
+        audioBitsPerSecond: 128000
+      };
+      
+      let mediaRecorder;
+      try {
+        mediaRecorder = new MediaRecorder(stream, options);
+        console.log("Using preferred codec: audio/webm;codecs=opus");
+      } catch (e) {
+        // Fallback to default codec if opus not supported
+        console.warn("Preferred codec not supported, using default format");
+        mediaRecorder = new MediaRecorder(stream);
+      }
+      
+      // Set up data event to collect audio chunks
       mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
+        console.log("Data available event:", event.data.size, "bytes");
+        if (event.data && event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
       
+      // Handle recording stopping
       mediaRecorder.onstop = async () => {
+        console.log("Recording stopped, collected chunks:", audioChunksRef.current.length);
         setIsRecording(false);
         
         if (audioChunksRef.current.length > 0) {
           await processAudio();
+        } else {
+          console.warn("No audio data collected");
+          setRecordingError("No audio data was recorded. Please try again and speak clearly.");
         }
+        
+        // Stop tracks to release microphone
+        stream.getTracks().forEach(track => track.stop());
       };
       
       // Set a timer to stop recording after 1 minute
       setTimeout(() => {
-        if (mediaRecorder.state === 'recording') {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+          console.log("Stopping recording after timeout");
           mediaRecorder.stop();
         }
       }, 60000); // 60 seconds
       
-      mediaRecorder.start();
+      // Request data at regular intervals rather than only at the end
+      mediaRecorder.start(1000); // Get data every second
+      
+      console.log("Recording started");
       mediaRecorderRef.current = mediaRecorder;
       setIsRecording(true);
       
     } catch (error) {
       console.error('Error starting recording:', error);
-      setRecordingError('Could not access microphone. Please check permissions.');
+      setRecordingError('Could not access microphone. Please check permissions and ensure no other app is using it.');
       setIsRecording(false);
     }
   };
@@ -74,13 +109,20 @@ export default function NewDonation() {
     if (audioChunksRef.current.length === 0) return;
     
     try {
+      setRecordingError(null); // Clear any previous errors
+      
       // Create a blob from the audio chunks
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      
+      // Add debug info
+      console.log('Audio blob created:', audioBlob.size, 'bytes');
       
       // Create a FormData object to send the audio file
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
       formData.append('language', language);
+      
+      console.log('Sending audio to API...');
       
       // Send the audio to our API endpoint
       const response = await fetch('/api/speech-to-text', {
@@ -88,24 +130,44 @@ export default function NewDonation() {
         body: formData,
       });
       
-      if (!response.ok) {
-        throw new Error('Failed to transcribe audio');
-      }
+      // Log the response status
+      console.log('API response status:', response.status);
       
       const data = await response.json();
       
+      // Log the response data
+      console.log('API response data:', data);
+      
+      if (!response.ok) {
+        console.error('API error:', data);
+        throw new Error(data.error || 'Failed to transcribe audio');
+      }
+      
       // Update the description with the transcribed text
       if (data.text) {
-        setDescription(prev => prev ? `${prev} ${data.text}` : data.text);
+        const newText = data.text.trim();
+        console.log('Transcribed text:', newText);
         
-        // Generate summary automatically
-        if (data.text.trim()) {
-          generateSummaryWithGPT(data.text.trim());
-        }
+        // Update with visual feedback
+        setDescription(prev => {
+          const updated = prev ? `${prev} ${newText}` : newText;
+          
+          // Generate summary automatically after a short delay
+          setTimeout(() => {
+            if (newText) {
+              generateSummaryWithGPT(updated);
+            }
+          }, 500);
+          
+          return updated;
+        });
+      } else {
+        console.warn('No transcription text returned');
+        setRecordingError('No speech detected. Please try again and speak clearly.');
       }
     } catch (error) {
       console.error('Error processing audio:', error);
-      setRecordingError('Error processing the recording. Please try again.');
+      setRecordingError('Error processing the recording. Please check your internet connection and try again.');
     }
   };
 

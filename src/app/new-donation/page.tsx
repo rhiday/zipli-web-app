@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 export default function NewDonation() {
   const router = useRouter();
   const [description, setDescription] = useState("");
-  const [isListening, setIsListening] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [language, setLanguage] = useState<'en-US' | 'fi-FI'>('fi-FI'); // Default to Finnish
   const [summaryPoints, setSummaryPoints] = useState<string[]>([]);
   const [showSummary, setShowSummary] = useState(false);
@@ -17,7 +17,6 @@ export default function NewDonation() {
   // For audio recording
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const [isRecording, setIsRecording] = useState(false);
   const [recordingError, setRecordingError] = useState<string | null>(null);
 
   // Start recording audio

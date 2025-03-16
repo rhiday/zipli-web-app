@@ -428,33 +428,147 @@ export default function NewDonation() {
             />
           </div>
           
-          {/* Alternative API toggle */}
-          <div className="mt-2 text-xs text-right">
-            <label className="inline-flex items-center cursor-pointer">
-              <input 
-                type="checkbox" 
-                checked={useAlternativeAPI} 
-                onChange={() => setUseAlternativeAPI(!useAlternativeAPI)}
-                className="sr-only peer"
-              />
-              <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
-              <span className="ms-1 text-gray-500">
-                {language === 'fi-FI' ? "Käytä vaihtoehtoista mikrofonia" : "Use alternative microphone"}
-              </span>
-            </label>
-          </div>
-          
-          {/* Mobile-specific help text */}
-          <div className="mt-2 text-sm text-gray-500 px-2 md:hidden">
-            <p>
-              {language === 'fi-FI' 
-                ? useAlternativeAPI 
-                  ? "Vaihtoehtoinen mikrofoni käytössä. Paina nappia aloittaaksesi." 
-                  : "Mobiililaitteilla: Varmista, että mikrofonilupa on sallittu ja pidä nappia pohjassa puhuessasi. Puhu lyhyitä fraaseja kerrallaan."
-                : useAlternativeAPI
-                  ? "Alternative microphone active. Tap button to start." 
-                  : "On mobile devices: Ensure microphone permission is allowed. Press and hold the button while speaking short phrases at a time."}
-            </p>
+          {/* Controls section with proper spacing */}
+          <div className="mt-4 space-y-4">
+            {/* Alternative API toggle */}
+            <div className="flex justify-end">
+              <label className="inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={useAlternativeAPI} 
+                  onChange={() => setUseAlternativeAPI(!useAlternativeAPI)}
+                  className="sr-only peer"
+                />
+                <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
+                <span className="ms-1 text-gray-500 text-xs">
+                  {language === 'fi-FI' ? "Käytä vaihtoehtoista mikrofonia" : "Use alternative microphone"}
+                </span>
+              </label>
+            </div>
+            
+            {/* Mobile-specific help text */}
+            <div className="text-sm text-gray-500 px-2 md:hidden">
+              <p>
+                {language === 'fi-FI' 
+                  ? useAlternativeAPI 
+                    ? "Vaihtoehtoinen mikrofoni käytössä. Paina nappia aloittaaksesi." 
+                    : "Mobiililaitteilla: Varmista, että mikrofonilupa on sallittu ja pidä nappia pohjassa puhuessasi. Puhu lyhyitä fraaseja kerrallaan."
+                  : useAlternativeAPI
+                    ? "Alternative microphone active. Tap button to start." 
+                    : "On mobile devices: Ensure microphone permission is allowed. Press and hold the button while speaking short phrases at a time."}
+              </p>
+            </div>
+            
+            {/* Microphone and preview buttons in a fixed container */}
+            <div className="flex justify-end gap-3 mt-4">
+              {/* Preview summary button */}
+              <button 
+                className={`rounded-full px-4 py-3 transition-colors shadow-sm ${
+                  !description.trim()
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300/50' // Disabled
+                    : showSummary
+                      ? 'bg-green-50 text-green-700 border border-green-300 hover:bg-green-100' // Summary showing
+                      : 'bg-gray-200 text-gray-600 border border-gray-300 hover:bg-gray-300' // Ready to preview
+                }`}
+                onClick={() => {
+                  // If currently listening, stop the microphone first
+                  if (isListening && speechRecognition) {
+                    speechRecognition.stop();
+                  }
+                  
+                  if (description.trim() && !showSummary) {
+                    generateSummaryWithGPT(description);
+                  } else if (showSummary) {
+                    setShowSummary(false);
+                  }
+                }}
+                disabled={!description.trim()}
+              >
+                <div className="flex items-center text-sm font-medium">
+                  {showSummary ? (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 mr-1">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      {language === 'fi-FI' ? 'Sulje' : 'Close'}
+                    </>
+                  ) : (
+                    <>
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 mr-1">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      {language === 'fi-FI' ? 'Esikatselu' : 'Preview'}
+                    </>
+                  )}
+                </div>
+              </button>
+              
+              {/* Voice input button */}
+              <button 
+                className={`rounded-full p-4 transition-colors shadow-md ${
+                  (useAlternativeAPI ? altListening : isListening) ? 'bg-red-600 animate-pulse' : 'bg-green-800 hover:bg-green-900'
+                }`}
+                onTouchStart={(e) => {
+                  if (useAlternativeAPI) return; // Skip for alternative API
+                  
+                  e.preventDefault();
+                  if (!isListening) {
+                    try {
+                      // For mobile, use a fresh instance each time
+                      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                      if (isMobile) {
+                        const recognition = initSpeechRecognition(language);
+                        if (recognition) {
+                          recognition.start();
+                          setShowSummary(false);
+                        }
+                      } else {
+                        toggleListening();
+                      }
+                    } catch (error) {
+                      console.error("Touch start error:", error);
+                      const debugEl = document.getElementById('debug-log');
+                      if (debugEl) debugEl.textContent = "Error: " + String(error);
+                    }
+                  }
+                }}
+                onTouchEnd={(e) => {
+                  if (useAlternativeAPI) return; // Skip for alternative API
+                  
+                  e.preventDefault();
+                  if (isListening) {
+                    try {
+                      // For mobile - stop on touch end
+                      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                      if (isMobile && speechRecognition) {
+                        speechRecognition.stop();
+                        // Don't generate summary on every phrase
+                      }
+                    } catch (error) {
+                      console.error("Touch end error:", error);
+                      const debugEl = document.getElementById('debug-log');
+                      if (debugEl) debugEl.textContent = "Error: " + String(error);
+                    }
+                  }
+                }}
+                onClick={toggleListening}
+              >
+                <div className="text-white w-8 h-8 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-6 h-6">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+                  </svg>
+                </div>
+              </button>
+            </div>
+            
+            {/* Speech status message */}
+            <div className="flex justify-center mt-2">
+              {(useAlternativeAPI ? altListening : isListening) && (
+                <span className="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full animate-pulse">
+                  {language === 'fi-FI' ? 'Kuuntelee...' : 'Listening...'}
+                </span>
+              )}
+            </div>
           </div>
           
           {/* Debug log for mobile testing */}
@@ -508,117 +622,6 @@ export default function NewDonation() {
               </p>
             </div>
           )}
-          
-          {/* Microphone button with language indicator */}
-          <div className="absolute bottom-4 right-4 flex gap-3">
-            {/* Preview summary button */}
-            <button 
-              className={`rounded-full px-4 py-3 transition-colors shadow-sm ${
-                !description.trim()
-                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300/50' // Disabled
-                  : showSummary
-                    ? 'bg-green-50 text-green-700 border border-green-300 hover:bg-green-100' // Summary showing
-                    : 'bg-gray-200 text-gray-600 border border-gray-300 hover:bg-gray-300' // Ready to preview
-              }`}
-              onClick={() => {
-                // If currently listening, stop the microphone first
-                if (isListening && speechRecognition) {
-                  speechRecognition.stop();
-                }
-                
-                if (description.trim() && !showSummary) {
-                  generateSummaryWithGPT(description);
-                } else if (showSummary) {
-                  setShowSummary(false);
-                }
-              }}
-              disabled={!description.trim()}
-            >
-              <div className="flex items-center text-sm font-medium">
-                {showSummary ? (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 mr-1">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                    {language === 'fi-FI' ? 'Sulje' : 'Close'}
-                  </>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-4 h-4 mr-1">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                    {language === 'fi-FI' ? 'Esikatselu' : 'Preview'}
-                  </>
-                )}
-              </div>
-            </button>
-            
-            {/* Voice input button */}
-            <button 
-              className={`rounded-full p-4 transition-colors shadow-md ${
-                (useAlternativeAPI ? altListening : isListening) ? 'bg-red-600 animate-pulse' : 'bg-green-800 hover:bg-green-900'
-              }`}
-              onTouchStart={(e) => {
-                if (useAlternativeAPI) return; // Skip for alternative API
-                
-                e.preventDefault();
-                if (!isListening) {
-                  try {
-                    // For mobile, use a fresh instance each time
-                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                    if (isMobile) {
-                      const recognition = initSpeechRecognition(language);
-                      if (recognition) {
-                        recognition.start();
-                        setShowSummary(false);
-                      }
-                    } else {
-                      toggleListening();
-                    }
-                  } catch (error) {
-                    console.error("Touch start error:", error);
-                    const debugEl = document.getElementById('debug-log');
-                    if (debugEl) debugEl.textContent = "Error: " + String(error);
-                  }
-                }
-              }}
-              onTouchEnd={(e) => {
-                if (useAlternativeAPI) return; // Skip for alternative API
-                
-                e.preventDefault();
-                if (isListening) {
-                  try {
-                    // For mobile - stop on touch end
-                    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                    if (isMobile && speechRecognition) {
-                      speechRecognition.stop();
-                      // Don't generate summary on every phrase
-                    }
-                  } catch (error) {
-                    console.error("Touch end error:", error);
-                    const debugEl = document.getElementById('debug-log');
-                    if (debugEl) debugEl.textContent = "Error: " + String(error);
-                  }
-                }
-              }}
-              onClick={toggleListening}
-            >
-              <div className="text-white w-8 h-8 flex items-center justify-center">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-6 h-6">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-                </svg>
-              </div>
-            </button>
-          </div>
-          
-          {/* Speech status message */}
-          <div className="absolute bottom-24 right-0 left-0 flex justify-center">
-            {(useAlternativeAPI ? altListening : isListening) && (
-              <span className="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full animate-pulse">
-                {language === 'fi-FI' ? 'Kuuntelee...' : 'Listening...'}
-              </span>
-            )}
-          </div>
         </div>
         
         {/* Bottom buttons */}

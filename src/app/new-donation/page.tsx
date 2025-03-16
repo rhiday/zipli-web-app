@@ -80,13 +80,16 @@ export default function NewDonation() {
         
         recognition.onstart = () => {
           setIsListening(true);
+          console.log("Speech recognition started");
         };
 
         recognition.onend = () => {
           setIsListening(false);
+          console.log("Speech recognition ended");
         };
 
         recognition.onresult = (event: SpeechRecognitionEvent) => {
+          console.log("Got speech result", event.results.length);
           const transcript = Array.from(event.results)
             .map(result => result[0])
             .map(result => result.transcript)
@@ -97,12 +100,36 @@ export default function NewDonation() {
 
         recognition.onerror = (event: SpeechRecognitionEvent) => {
           console.error('Speech recognition error', event.error);
+          
+          // Handle common mobile errors
+          if (event.error === 'not-allowed' || event.error === 'permission-denied') {
+            alert('Microphone permission is required for voice input. Please enable it in your browser settings.');
+          } else if (event.error === 'no-speech') {
+            alert('No speech detected. Please try speaking more clearly or check your microphone.');
+          } else if (event.error === 'audio-capture') {
+            alert('No microphone was found or microphone is already in use by another application.');
+          } else if (event.error === 'network') {
+            alert('Network error occurred. Please check your internet connection.');
+          } else if (event.error === 'aborted') {
+            // Just log this one, not alerting the user
+            console.log('Speech recognition was aborted');
+          }
+          
           setIsListening(false);
         };
 
         setSpeechRecognition(recognition);
+        
+        // For debugging on mobile
+        console.log("Speech recognition initialized with language:", lang);
+        
+        return recognition;
+      } else {
+        console.error("Speech Recognition API not supported in this browser");
+        return null;
       }
     }
+    return null;
   };
 
   // Initialize speech recognition on component mount
@@ -144,19 +171,47 @@ export default function NewDonation() {
 
   const toggleListening = () => {
     if (!speechRecognition) {
-      alert('Speech recognition is not supported in your browser.');
+      // Try to reinitialize if not available
+      const recognition = initSpeechRecognition(language);
+      if (!recognition) {
+        alert('Speech recognition is not supported in your browser.');
+        return;
+      }
+      
+      // Add a small delay to ensure initialization is complete
+      setTimeout(() => {
+        try {
+          recognition.start();
+          setShowSummary(false);
+        } catch (error) {
+          console.error("Error starting speech recognition:", error);
+          alert('Failed to start speech recognition. Please try again.');
+        }
+      }, 100);
       return;
     }
 
     if (isListening) {
-      speechRecognition.stop();
-      // After stopping, generate the summary if there's text
-      if (description.trim()) {
-        generateSummaryWithGPT(description);
+      try {
+        speechRecognition.stop();
+        // After stopping, generate the summary if there's text
+        if (description.trim()) {
+          generateSummaryWithGPT(description);
+        }
+      } catch (error) {
+        console.error("Error stopping speech recognition:", error);
       }
     } else {
-      speechRecognition.start();
-      setShowSummary(false);
+      try {
+        speechRecognition.start();
+        setShowSummary(false);
+      } catch (error) {
+        console.error("Error starting speech recognition:", error);
+        alert('Failed to start speech recognition. Please try again.');
+        
+        // Try to reinitialize
+        initSpeechRecognition(language);
+      }
     }
   };
 
@@ -275,6 +330,15 @@ export default function NewDonation() {
                 setShowSummary(false);
               }}
             />
+          </div>
+          
+          {/* Mobile-specific help text */}
+          <div className="mt-2 text-sm text-gray-500 px-2 md:hidden">
+            <p>
+              {language === 'fi-FI' 
+                ? "Mobiililaitteilla: Varmista, että mikrofonilupa on sallittu ja pidä nappia pohjassa puhuessasi." 
+                : "On mobile devices: Ensure microphone permission is allowed and hold the button while speaking."}
+            </p>
           </div>
           
           {/* Summary of key points */}

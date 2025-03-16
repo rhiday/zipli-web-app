@@ -24,13 +24,13 @@ export async function POST(request: Request) {
 
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
+      model: "gpt-4-turbo",
       messages: [
         { 
           role: "system", 
           content: language === 'fi-FI'
-            ? "Olet avustaja, joka tiivistää ruokalahjoituksen kuvauksia selkeiksi avainkohdiksi."
-            : "You are an assistant that summarizes food donation descriptions into clear key points."
+            ? "Olet avustaja, joka tiivistää ruokalahjoituksen kuvauksia selkeiksi avainkohdiksi. Keskity ruoan määriin, tyyppeihin, päiväyksiin ja kuntoon."
+            : "You are an assistant that summarizes food donation descriptions into clear key points. Focus on food quantities, types, dates and condition."
         },
         { role: "user", content: prompt }
       ],

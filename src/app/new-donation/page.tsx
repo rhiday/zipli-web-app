@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
+// We'll use a simpler approach for dynamic imports
 
 // Type declarations for the Web Speech API
 interface SpeechRecognitionEvent extends Event {
@@ -62,21 +62,64 @@ export default function NewDonation() {
   const [showSummary, setShowSummary] = useState(false);
   const [isSummarizing, setIsSummarizing] = useState(false);
   const [useAlternativeAPI, setUseAlternativeAPI] = useState(false); // Toggle for the alternative API
-
-  // For react-speech-recognition
-  const {
-    transcript,
-    listening,
-    resetTranscript,
-    browserSupportsSpeechRecognition
-  } = useSpeechRecognition();
-
-  // Update description when transcript changes from react-speech-recognition
+  
+  // For alternative API state
+  const [altListening, setAltListening] = useState(false);
+  const [altSupported, setAltSupported] = useState(false);
+  const altAPIRef = useRef<any>(null);
+  
+  // Initialize alternative API on client side only
   useEffect(() => {
-    if (useAlternativeAPI && transcript) {
-      setDescription(prev => prev + " " + transcript);
+    if (useAlternativeAPI && !altAPIRef.current) {
+      // Only import on client and only when needed
+      import('react-speech-recognition').then((mod) => {
+        const { useSpeechRecognition, default: SpeechRecognition } = mod;
+        altAPIRef.current = {
+          SpeechRecognition,
+          startListening: () => {
+            SpeechRecognition.startListening({ 
+              continuous: true, 
+              language: language
+            });
+            setAltListening(true);
+          },
+          stopListening: () => {
+            SpeechRecognition.stopListening();
+            setAltListening(false);
+          },
+          supported: SpeechRecognition.browserSupportsSpeechRecognition()
+        };
+        
+        setAltSupported(SpeechRecognition.browserSupportsSpeechRecognition());
+        
+        // Set up the transcript listener
+        const recognition = SpeechRecognition.getRecognition();
+        if (recognition) {
+          recognition.onresult = (event: any) => {
+            try {
+              const transcript = Array.from(event.results)
+                .map((result: any) => result[0].transcript)
+                .join(' ');
+              
+              console.log("Alt API Transcript:", transcript);
+              setDescription(prev => prev + " " + transcript);
+              
+              // Update debug log
+              const debugEl = document.getElementById('debug-log');
+              if (debugEl) {
+                debugEl.textContent = `Alternative API: ${altListening ? 'Listening' : 'Not listening'} | Support: ${altSupported ? 'Yes' : 'No'} | Transcript: ${transcript}`;
+              }
+            } catch (error) {
+              console.error("Error processing transcript:", error);
+            }
+          };
+        }
+      }).catch(err => {
+        console.error("Failed to load alternative speech recognition:", err);
+        setAltSupported(false);
+      });
     }
-  }, [transcript, useAlternativeAPI]);
+  }, [useAlternativeAPI, language]);
 
   // Initialize speech recognition with the selected language
   const initSpeechRecognition = (lang: string) => {
@@ -205,19 +248,20 @@ export default function NewDonation() {
   const toggleListening = () => {
     // If using alternative API
     if (useAlternativeAPI) {
-      if (listening) {
-        SpeechRecognition.stopListening();
-        resetTranscript();
-        // Generate summary if there's text
-        if (description.trim()) {
-          generateSummaryWithGPT(description);
+      if (altAPIRef.current) {
+        if (altListening) {
+          altAPIRef.current.stopListening();
+          // After stopping, generate the summary if there's text
+          if (description.trim()) {
+            generateSummaryWithGPT(description);
+          }
+        } else {
+          altAPIRef.current.startListening();
+          setShowSummary(false);
         }
       } else {
-        SpeechRecognition.startListening({ 
-          continuous: true,
-          language: language 
-        });
-        setShowSummary(false);
+        // Alert if alternative API isn't loaded yet
+        alert("Alternative speech recognition is still loading. Please try again in a moment.");
       }
       return;
     }
@@ -415,10 +459,12 @@ export default function NewDonation() {
           
           {/* Debug log for mobile testing */}
           <div className="fixed bottom-0 left-0 right-0 bg-white p-2 text-xs overflow-auto max-h-24 opacity-70 z-40">
-            <pre id="debug-log">{useAlternativeAPI 
-              ? `Alternative API: ${listening ? 'Listening' : 'Not listening'} | Support: ${browserSupportsSpeechRecognition ? 'Yes' : 'No'}`
-              : 'Original API: ' + (isListening ? 'Listening' : 'Not listening')
-            }</pre>
+            <pre id="debug-log">
+              {useAlternativeAPI 
+                ? `Alternative API: ${altListening ? 'Listening' : 'Not listening'} | Support: ${altSupported ? 'Yes' : 'No'}`
+                : `Original API: ${isListening ? 'Listening' : 'Not listening'}`
+              }
+            </pre>
           </div>
           
           {/* Summary of key points */}
@@ -510,7 +556,7 @@ export default function NewDonation() {
             {/* Voice input button */}
             <button 
               className={`rounded-full p-4 transition-colors shadow-md ${
-                (useAlternativeAPI ? listening : isListening) ? 'bg-red-600 animate-pulse' : 'bg-green-800 hover:bg-green-900'
+                (useAlternativeAPI ? altListening : isListening) ? 'bg-red-600 animate-pulse' : 'bg-green-800 hover:bg-green-900'
               }`}
               onTouchStart={(e) => {
                 if (useAlternativeAPI) return; // Skip for alternative API
@@ -531,7 +577,8 @@ export default function NewDonation() {
                     }
                   } catch (error) {
                     console.error("Touch start error:", error);
-                    document.getElementById('debug-log')!.textContent = "Error: " + String(error);
+                    const debugEl = document.getElementById('debug-log');
+                    if (debugEl) debugEl.textContent = "Error: " + String(error);
                   }
                 }
               }}
@@ -549,11 +596,12 @@ export default function NewDonation() {
                     }
                   } catch (error) {
                     console.error("Touch end error:", error);
-                    document.getElementById('debug-log')!.textContent = "Error: " + String(error);
+                    const debugEl = document.getElementById('debug-log');
+                    if (debugEl) debugEl.textContent = "Error: " + String(error);
                   }
                 }
               }}
-              onClick={() => toggleListening()}
+              onClick={toggleListening}
             >
               <div className="text-white w-8 h-8 flex items-center justify-center">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-6 h-6">
@@ -565,18 +613,10 @@ export default function NewDonation() {
           
           {/* Speech status message */}
           <div className="absolute bottom-24 right-0 left-0 flex justify-center">
-            {useAlternativeAPI ? (
-              listening && (
-                <span className="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full animate-pulse">
-                  {language === 'fi-FI' ? 'Kuuntelee...' : 'Listening...'}
-                </span>
-              )
-            ) : (
-              isListening && (
-                <span className="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full animate-pulse">
-                  {language === 'fi-FI' ? 'Kuuntelee...' : 'Listening...'}
-                </span>
-              )
+            {(useAlternativeAPI ? altListening : isListening) && (
+              <span className="bg-red-100 text-red-800 text-xs font-medium px-2.5 py-0.5 rounded-full animate-pulse">
+                {language === 'fi-FI' ? 'Kuuntelee...' : 'Listening...'}
+              </span>
             )}
           </div>
         </div>
